@@ -1,0 +1,6 @@
+<launch>
+  <arg name="use_rviz" default="true"/>
+  <node pkg="px4_controller" type="waypoint_mission_demo.py" name="waypoint_mission" output="screen"/>
+  <node if="$(arg use_rviz)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find px4_controller)/rviz/waypoint_mission.rviz" output="screen"/>
+</launch>
