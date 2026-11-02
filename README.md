@@ -176,7 +176,8 @@ roslaunch mavros px4.launch fcu_url:=/dev/ttyUSB0:921600
 export ROS_MASTER_URI="http://192.168.4.2:11311"
 source /opt/ros/noetic/setup.bash
 source /path/to/repository/ros1_ws/devel/setup.bash
-roslaunch px4_controller waypoint_mission.launch use_rviz:=true
+# run this: roslaunch px4_controller waypoint_mission_demo.launch use_rviz:=true 
+# or this: rosrun px4_controller simple_mission.py
 ```
 
 The waypoint mission arms, takes off, enters Offboard, follows the configured
