@@ -6,7 +6,7 @@ import math
 import rospy
 import tf2_ros
 from geometry_msgs.msg import Point, PoseStamped, TransformStamped, TwistStamped
-from mavros_msgs.msg import PositionTarget, State
+from mavros_msgs.msg import PositionTarget, State, StatusText
 from mavros_msgs.srv import CommandBool, SetMode
 from nav_msgs.msg import Path
 from visualization_msgs.msg import Marker, MarkerArray
@@ -44,10 +44,10 @@ class WaypointMission(object):
 
         # Initial altitude used for route markers; waypoint altitudes are
         # reset to the measured takeoff altitude once it is stable.
-        self.takeoff_altitude = rospy.get_param("~takeoff_altitude", 2.0)
+        self.takeoff_altitude = rospy.get_param("~takeoff_altitude", 1.0)
         self.takeoff_settle_delay = rospy.get_param("~takeoff_settle_delay", 5.0)
         self.takeoff_altitude_stability_duration = rospy.get_param(
-            "~altitude_stability_duration", 2.0
+            "~altitude_stability_duration", 1.5
         )
         self.takeoff_altitude_stability_tolerance = rospy.get_param(
             "~altitude_stability_tolerance", 0.15
@@ -82,6 +82,9 @@ class WaypointMission(object):
         self.state_sub = rospy.Subscriber(
             "/mavros/state", State, self.state_cb, queue_size=10
         )
+        self.statustext_sub = rospy.Subscriber(
+            "/mavros/statustext/recv", StatusText, self.statustext_cb, queue_size=10
+        )
         self.pose_sub = rospy.Subscriber(
             "/mavros/local_position/pose", PoseStamped, self.pose_cb, queue_size=10
         )
@@ -104,6 +107,18 @@ class WaypointMission(object):
             rospy.loginfo(
                 "PX4 state changed: mode=%s armed=%s connected=%s",
                 msg.mode or "unknown", msg.armed, msg.connected,
+            )
+
+    def statustext_cb(self, msg):
+        if msg.severity <= StatusText.WARNING:
+            rospy.logwarn(
+                "PX4 status text during %s: severity=%d message=%s",
+                self.phase, msg.severity, msg.text,
+            )
+        else:
+            rospy.loginfo(
+                "PX4 status text during %s: severity=%d message=%s",
+                self.phase, msg.severity, msg.text,
             )
 
     def pose_cb(self, msg):
@@ -309,9 +324,9 @@ class WaypointMission(object):
 
         if self.phase == "takeoff":
             # Mirror simple_mission: if PX4 leaves takeoff before settling,
-            # ask for AUTO.TAKEOFF again. AUTO.LOITER means PX4 has completed
-            # its climb and is holding position while stability is confirmed.
-            if self.state.mode not in ("AUTO.TAKEOFF", "AUTO.LOITER"):
+            # ask for AUTO.TAKEOFF again. POSCTL means PX4 has completed its
+            # climb and is holding position while stability is confirmed.
+            if self.state.mode not in ("AUTO.TAKEOFF", "POSCTL"):
                 self.request_mode("AUTO.TAKEOFF", now)
                 return
             if (now - self.takeoff_started).to_sec() < self.takeoff_settle_delay:
@@ -379,7 +394,7 @@ class WaypointMission(object):
             )
 
         if self.phase == "hover":
-            if self.state.mode not in ("AUTO.TAKEOFF", "AUTO.LOITER", "HOLD"):
+            if self.state.mode not in ("AUTO.TAKEOFF", "POSCTL", "HOLD"):
                 if (now - self.last_progress_log).to_sec() >= 2.0:
                     rospy.logwarn(
                         "Hover phase stopped: PX4 is in %s.",
@@ -400,11 +415,20 @@ class WaypointMission(object):
 
         if self.phase == "offboard_prepare":
             if self.state.mode not in (
-                "AUTO.TAKEOFF", "AUTO.LOITER", "HOLD", "OFFBOARD"
+                "AUTO.TAKEOFF", "POSCTL", "HOLD", "OFFBOARD"
             ):
                 if (now - self.last_progress_log).to_sec() >= 2.0:
                     rospy.logwarn("Offboard handoff stopped: PX4 is in %s. Not overriding this mode.", self.state.mode)
                     self.last_progress_log = now
+                return
+            if self.state.mode == "AUTO.TAKEOFF":
+                if (now - self.last_progress_log).to_sec() >= 2.0:
+                    rospy.loginfo(
+                        "Waiting for AUTO.TAKEOFF to finish; requesting "
+                        "POSCTL before OFFBOARD"
+                    )
+                    self.last_progress_log = now
+                self.request_mode("POSCTL", now)
                 return
             self.publish_body_velocity(0.0, 0.0, 0.0)
             stream_time = (now - self.setpoint_stream_started).to_sec()

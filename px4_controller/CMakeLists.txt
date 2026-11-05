@@ -164,6 +164,7 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   scripts/mission.py
+  scripts/mission_adv.py
   scripts/simple_mission.py
   scripts/waypoint_mission_demo.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
