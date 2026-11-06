@@ -1,188 +1,238 @@
-## PX4 Vision ROS 1 Workspace
+# PX4 ROS 2 Offboard Controller
 
-ROS 1 Noetic waypoint controller and MAVROS bridge for the PX4 Vision Dev Kit
-v1.5 (Pixhawk 6C). This drone uses PX4 firmware **v1.13.3**. Do not change the
-firmware: another build may not support its range and optical-flow sensors.
+ROS 2 Python offboard examples for PX4 using `px4_msgs` and the Micro XRCE-DDS
+client/agent bridge. This guide targets PX4 **v1.14.4** and ROS 2 **Humble** on
+Ubuntu 22.04. PX4 v1.14 uses uXRCE-DDS; it does not use the PX4 v1.13
+Fast-RTPS bridge.
 
-See [PX4-AUTOPILOT-MODES.md](docs/PX4-AUTOPILOT-MODES.md) for the flight-mode
-summary and the control behavior used by this drone.
+The PX4 client runs in PX4 firmware and exchanges DDS data with
+`MicroXRCEAgent` on the companion computer. ROS 2 nodes publish and subscribe
+to the exposed PX4 topics. The ROS 2 message definitions must match the PX4
+firmware, so this workspace uses the `px4_msgs` **`release/1.14`** branch.
 
-## Installation
+For ROS 2 setup and protocol details, see the [PX4 v1.14 ROS 2 User Guide](https://docs.px4.io/v1.14/en/ros/ros2_comm),
+[uXRCE-DDS guide](https://docs.px4.io/v1.14/en/middleware/uxrce_dds), and
+[Offboard mode guide](https://docs.px4.io/v1.14/en/flight_modes/offboard).
 
-### Common requirements
+## Contents
 
-- Ubuntu 20.04 and ROS 1 Noetic. `ros-base` is sufficient; install `desktop`
-  if you need RViz.
-- `catkin_tools` and `rosdep` build tools.
-- GeographicLib tools and datasets for MAVROS.
+- `scripts/offboard_position_controller.py` — reusable controller that streams
+  `OffboardControlMode` and `TrajectorySetpoint` messages in PX4 local NED.
+- `scripts/triangle_mission.py` — example waypoint mission built on the
+  controller. Its `max_velocity` and `waypoint_hold_duration` constructor
+  arguments set the horizontal setpoint speed limit and pause at each point.
+- `rviz/waypoint_mission_ros2.rviz` — RViz 2 view for the live pose, path,
+  waypoint markers, and status markers.
 
-Install only packages that are missing on the computer. For a minimal ROS
-install, install ROS Noetic base; install RViz only if you want the visualizer.
-MAVROS source is included in this workspace, so build it here instead of
-installing a second MAVROS copy from apt.
+The controller folder currently has no ROS 2 `package.xml` or launch file.
+Build `px4_msgs` with colcon, then run the Python scripts directly as shown
+below.
 
-If ROS Noetic is missing:
+## Requirements
 
+- Ubuntu 22.04 and ROS 2 Humble (`ros-humble-desktop` provides RViz 2).
+- PX4-Autopilot v1.14.4 for SITL or the intended flight controller firmware.
+- `px4_msgs` from the `release/1.14` branch.
+- Micro XRCE-DDS Agent on the computer that connects to PX4's uXRCE-DDS client.
+- QGroundControl is optional for monitoring PX4.
+
+PX4 v1.14.4 firmware support for the PX4 Vision Dev Kit sensors and board
+configuration must be confirmed for the specific airframe before updating a
+real flight controller. A matching ROS message branch alone does not verify
+hardware compatibility.
+
+## Build the ROS 2 workspace
+
+The workspace is `ros2_ws` at the repository root. Check that `px4_msgs` is
+using the v1.14 definitions:
+
+```bash
+cd /path/to/repository/ros2_ws/src/px4_msgs
+git checkout release/1.14
 ```
-sudo apt install ros-noetic-ros-base
-```
 
-If you want RViz and it is missing:
+Install missing dependencies and build the workspace:
 
-```
-sudo apt install ros-noetic-rviz
-```
-
-If catkin, rosdep, or GeographicLib tools are missing:
-
-```
-sudo apt update
-sudo apt install ros-noetic-catkin python3-catkin-tools python3-rosdep geographiclib-tools libgeographic-dev
-```
-
-Initialize `rosdep` once per machine. If it is already initialized, omit its
-first command in the block below. Then install missing workspace dependencies
-and build the workspace. Replace `/path/to/repository` with the actual checkout
-path. Repeat dependency installation and the build on each computer that will
-run ROS packages from this workspace.
-
-```
-sudo rosdep init
-rosdep update
-source /opt/ros/noetic/setup.bash
-cd /path/to/repository/ros1_ws
+```bash
+cd /path/to/repository/ros2_ws
+source /opt/ros/humble/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
-catkin build
+colcon build --symlink-install
 ```
 
-Install GeographicLib data if it is not already present:
+Source both ROS 2 and the workspace in every terminal that runs a node:
 
-```
-cd /path/to/repository/ros1_ws
-sudo src/mavros/mavros/scripts/install_geographiclib_datasets.sh
-```
-
-### Simulation requirements
-
-- PX4-Autopilot source at the `v1.13.3` release ref, with submodules initialized.
-  Complete the PX4 setup by following the
-  [PX4 v1.13 installation guide](https://docs.px4.io/v1.13/en/dev_setup/dev_env_linux_ubuntu).
-- Gazebo Classic SITL. Use the PX4-Autopilot installation instructions for
-  simulator dependencies.
-- QGroundControl is optional for monitoring the simulated vehicle.
-
-### Real-drone requirements
-
-- PX4 Vision Dev Kit v1.5 running its current PX4 v1.13.3 firmware.
-- QGroundControl on the operator computer.
-- ROS Noetic and MAVROS on the drone's companion computer. Configure the MAVROS
-  FCU URL for the Pixhawk serial device and baud rate used on the drone.
-- Network connectivity between the companion computer and operator computer.
-- Connect to the drone's `mixhawk4` Wi-Fi network (password: `mixhawk4`) before
-  running with the real drone.
-
-## Mission launch files
-
-Run a mission only after MAVROS is connected and ROS topics are available.
-
-### Configured waypoint route
-
-`waypoint_mission.launch` runs `mission.py` and follows the configured waypoint
-route. RViz starts by default. Set `use_rviz:=false` to disable it.
-
-```
-roslaunch px4_controller waypoint_mission.launch
+```bash
+cd /path/to/repository/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 ```
 
-### Triangle demo
+## Micro XRCE-DDS Agent
 
-`waypoint_mission_demo.launch` runs a short triangle route, returns to the
-launch point, and holds briefly at each waypoint. RViz starts by default.
+The DDS domain ID is currently **10**. PX4's `UXRCE_DDS_DOM_ID` parameter and
+the `ROS_DOMAIN_ID` environment variable on the companion computer and ROS 2
+operator computer must all be set to `10`. For example, source ROS 2 in each
+ROS terminal with:
 
-```
-roslaunch px4_controller waypoint_mission_demo.launch
-```
-
-### Takeoff and landing check
-
-`simple_mission.py` takes off, hovers briefly, and lands without following
-waypoints.
-
-```
-rosrun px4_controller simple_mission.py
+```bash
+export ROS_DOMAIN_ID=10
 ```
 
-## Run in simulation
+### (1) Simulation (SITL)
 
-Use separate terminals for PX4, MAVROS, and the mission.
+PX4 SITL connects to the agent over UDP port `8888`. Install the agent using
+the PX4 v1.14 documented Snap channel:
 
-1. From the PX4-Autopilot repository, select the v1.13.3 release and start SITL
-   with Gazebo Classic:
-
-```
-cd /path/to/PX4-Autopilot
-git checkout v1.13.3
-git submodule update --init --recursive
-make px4_sitl gazebo
+```bash
+sudo snap install micro-xrce-dds-agent --edge
 ```
 
-2. Start QGroundControl if you want to monitor the simulated drone.
+Start the UDP agent in its own terminal before starting SITL:
 
-3. Start MAVROS with the SITL UDP connection:
-
-```
-source /opt/ros/noetic/setup.bash
-source /path/to/repository/ros1_ws/devel/setup.bash
-roslaunch mavros px4.launch fcu_url:="udp://:14540@127.0.0.1:14557"
+```bash
+micro-xrce-dds-agent udp4 -p 8888
 ```
 
-4. Start the waypoint mission in another terminal:
+After PX4 SITL and the agent are both running, check the client status in the
+PX4 shell:
 
-```
-source /opt/ros/noetic/setup.bash
-source /path/to/repository/ros1_ws/devel/setup.bash
-roslaunch px4_controller waypoint_mission.launch use_rviz:=false
-```
-
-   Remove `use_rviz:=false` or set it to `true` to open the included RViz view.
-
-## Run on the real drone
-
-The ROS master and MAVROS run on the drone's companion computer. Its default
-IP address is `192.168.4.2`. The operator computer runs the mission node and
-connects to the companion's ROS master. Both machines must be reachable over
-the ROS network. Replace the operator IP example if it differs on your network.
-
-1. Connect the companion computer and operator computer to the `mixhawk4`
-   Wi-Fi network using password `mixhawk4`.
-
-2. On the companion computer, start the MAVROS bridge. `roslaunch` starts the
-   local ROS master if one is not already running. Use the Pixhawk serial
-   port and baud rate.
-
-```
-source /opt/ros/noetic/setup.bash
-source /path/to/repository/ros1_ws/devel/setup.bash
-roslaunch mavros px4.launch fcu_url:=/dev/ttyUSB0:921600
+```text
+uxrce_dds_client status
 ```
 
-3. Open QGroundControl on the operator computer and connect over the configured
-   telemetry link.
+If it is not connected, verify the agent is listening on UDP port `8888` and
+that SITL and ROS 2 use `ROS_DOMAIN_ID=10`.
 
-4. On the operator computer, start the mission. Set `OPERATOR_IP` to the
-   computer's address on the network shared with the drone.
+### (2) Real PX4 Vision 1.5
 
-```
-export ROS_MASTER_URI="http://192.168.4.2:11311"
-source /opt/ros/noetic/setup.bash
-source /path/to/repository/ros1_ws/devel/setup.bash
-# run this: roslaunch px4_controller waypoint_mission_demo.launch use_rviz:=true 
-# or this: rosrun px4_controller simple_mission.py
+**The companion computer is already configured to start the agent as a system
+service** over the USB serial link. The service runs:
+
+```bash
+/usr/bin/snap run micro-xrce-dds-agent serial --dev /dev/ttyUSB0 -b 921600
 ```
 
-The waypoint mission arms, takes off, enters Offboard, follows the configured
-route, and requests landing. Confirm the vehicle and mode in QGroundControl
-before starting the mission.
+In the PX4 shell, check the client status:
 
+```text
+uxrce_dds_client status
+```
 
+Leave that service in control of the serial agent. Do not manually start a
+second agent on `/dev/ttyUSB0`. PX4's uXRCE-DDS client must be configured for
+the matching flight-controller serial port and baud rate. PX4 v1.14's client
+is included in firmware; see the [PX4 v1.14 uXRCE-DDS guide](https://docs.px4.io/v1.14/en/middleware/uxrce_dds)
+for client setup and hardware-specific port configuration.
 
+If the client is not connected, check these PX4 settings and the companion
+service:
+
+- Set `UXRCE_DDS_CFG=TELEM2` so the client uses TELEM2 to communicate with the
+  companion computer's agent.
+- Disable MAVLink on TELEM2 with `MAV_1_CONFIG=Disabled (0)` so the DDS client
+  can use the serial port. The PX4 v1.14 parameter is named `MAV_1_CONFIG`.
+- Make sure `UXRCE_DDS_DOM_ID` on PX4 and `ROS_DOMAIN_ID` on the UP Core and
+  operator computer are all `10`.
+- Confirm the companion service uses `/dev/ttyUSB0` at `921600` baud and that
+  the cable is connected to PX4's TELEM2 port.
+
+## Run in SITL
+
+Use separate terminals for the UDP agent, PX4, mission, and RViz.
+
+1. Start the agent as described above.
+
+2. In the PX4-Autopilot v1.14.4 checkout, start SITL. Gazebo Classic is shown
+   here:
+
+   ```bash
+   cd /path/to/PX4-Autopilot
+   git checkout v1.14.4
+   git submodule update --init --recursive
+   ROS_DOMAIN_ID=10 make px4_sitl gazebo-classic
+   ```
+
+   PX4 v1.14 SITL starts the uXRCE-DDS client, which should connect to the
+   agent at `127.0.0.1:8888`. Check the PX4 and agent terminals for connection
+   messages.
+
+   With both PX4 simulation and the agent running, open a ROS 2 terminal with
+   `ROS_DOMAIN_ID=10` and list the drone topics:
+
+   ```bash
+   source /opt/ros/humble/setup.bash
+   export ROS_DOMAIN_ID=10
+   ros2 topic list
+   ```
+
+   The list should include PX4 topics such as `/fmu/out/vehicle_local_position`
+   and `/fmu/in/trajectory_setpoint`.
+
+3. In a ROS 2 terminal, source the workspace and run the mission:
+
+   ```bash
+   cd /path/to/repository/ros2_ws
+   source /opt/ros/humble/setup.bash
+   export ROS_DOMAIN_ID=10
+   source install/setup.bash
+   python3 src/px4_controller/scripts/triangle_mission.py
+   ```
+
+4. In another sourced ROS 2 terminal, start RViz 2 with the included view:
+
+   ```bash
+   cd /path/to/repository/ros2_ws
+   source /opt/ros/humble/setup.bash
+   export ROS_DOMAIN_ID=10
+   source install/setup.bash
+   rviz2 -d src/px4_controller/rviz/waypoint_mission_ros2.rviz
+   ```
+
+The node expects PX4 topics including `/fmu/out/vehicle_local_position` and
+publishes to `/fmu/in/offboard_control_mode`, `/fmu/in/trajectory_setpoint`,
+and `/fmu/in/vehicle_command`. Check that the PX4 v1.14.4
+`src/modules/uxrce_dds_client/dds_topics.yaml` exposes these topics for the
+firmware build. `px4_msgs` must use matching v1.14 definitions.
+
+## Run with a real vehicle
+
+The companion computer already runs the Micro XRCE-DDS Agent as a startup
+service over `/dev/ttyUSB0` at `921600` baud. Confirm that the service is active
+and that the PX4 uXRCE-DDS client on the flight controller is configured for
+the matching serial connection. Do not start the SITL UDP agent on the real
+drone, or launch a second serial agent. The companion computer must also have
+ROS 2 Humble available to the mission node. The SITL UDP localhost settings do
+not apply to the aircraft.
+
+Once the client and agent report a connection, inspect the ROS 2 graph before
+starting the mission:
+
+```bash
+ros2 topic list | grep '^/fmu/'
+ros2 topic echo /fmu/out/vehicle_local_position
+```
+
+Then run the mission and RViz 2 using the commands in the SITL section. The
+controller arms, requests Offboard, takes off with position setpoints, follows
+its local-position waypoints, then sends PX4 `VEHICLE_CMD_NAV_LAND` through
+`/fmu/in/vehicle_command` to request automatic landing.
+
+Offboard requires a valid position estimate and a continuous
+`OffboardControlMode` stream. PX4 requires the stream to be active for at least
+one second before entering Offboard and exits Offboard if the stream is lost.
+Check the vehicle state in QGroundControl, keep a working manual recovery
+method available, and begin with a controlled test area and low-risk setup.
+
+## Tune the example mission
+
+`TriangleMission` accepts its horizontal setpoint speed cap in meters per
+second and the time to pause at each waypoint in seconds:
+
+```python
+node = TriangleMission(max_velocity=0.15, waypoint_hold_duration=4.0)
+```
+
+The defaults are `max_velocity=0.25` m/s and `waypoint_hold_duration=3.0` s.
+The controller also limits the vertical setpoint slew separately in
+`OffboardPositionController`.

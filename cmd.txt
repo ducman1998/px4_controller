@@ -1,0 +1,3 @@
+sudo snap install micro-xrce-dds-agent --edge
+
+micro-xrce-dds-agent udp4 -p 8888
