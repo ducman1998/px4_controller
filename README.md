@@ -98,7 +98,7 @@ micro-xrce-dds-agent udp4 -p 8888
 ```
 
 After PX4 SITL and the agent are both running, check the client status in the
-PX4 shell:
+PX4 MAVLink Console:
 
 ```text
 uxrce_dds_client status
@@ -116,7 +116,7 @@ service** over the USB serial link. The service runs:
 /usr/bin/snap run micro-xrce-dds-agent serial --dev /dev/ttyUSB0 -b 921600
 ```
 
-In the PX4 shell, check the client status:
+In the PX4 MAVLink Console, check the client status:
 
 ```text
 uxrce_dds_client status
