@@ -8,7 +8,8 @@ Fast-RTPS bridge.
 The PX4 client runs in PX4 firmware and exchanges DDS data with
 `MicroXRCEAgent` on the companion computer. ROS 2 nodes publish and subscribe
 to the exposed PX4 topics. The ROS 2 message definitions must match the PX4
-firmware, so this workspace uses the `px4_msgs` **`release/1.14`** branch.
+firmware, so this workspace uses the [`px4_msgs` repository](https://github.com/PX4/px4_msgs)
+on the **`release/1.14`** branch.
 
 For ROS 2 setup and protocol details, see the [PX4 v1.14 ROS 2 User Guide](https://docs.px4.io/v1.14/en/ros/ros2_comm),
 [uXRCE-DDS guide](https://docs.px4.io/v1.14/en/middleware/uxrce_dds), and
@@ -47,6 +48,8 @@ The workspace is `ros2_ws` at the repository root. Check that `px4_msgs` is
 using the v1.14 definitions:
 
 ```bash
+cd /path/to/repository/ros2_ws/src
+git clone https://github.com/PX4/px4_msgs.git
 cd /path/to/repository/ros2_ws/src/px4_msgs
 git checkout release/1.14
 ```
